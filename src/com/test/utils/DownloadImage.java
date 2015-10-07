@@ -9,19 +9,21 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 
 import android.content.Context;
+import android.os.Handler;
+import android.os.Message;
 import android.util.Log;
 
 import com.test.database.Image;
 import com.test.database.ImageDao;
 import com.test.sharing.NativeImageSet;
 
-public class DownloadImage {
+public class DownloadImage {	
 	/**
 	 * 文件下载
 	 * 
 	 * @param url
 	 */
-	public static void downloadImage(final String path,final Context context) {
+	public static void downloadImage(final String path,final Context context,final Handler handler) {
 		/**
 		 * 文件下载线程
 		 */
@@ -36,7 +38,7 @@ public class DownloadImage {
 				OutputStream os = null;
 				File file = null;
 
-				try {
+				try {						
 					FileName = path.substring(path.lastIndexOf("/") + 1);
 					FilePath = NativeImageSet.FilePath + FileName;
 
@@ -71,24 +73,41 @@ public class DownloadImage {
 						FilePath = NativeImageSet.FilePath + newFileName;
 								
 						file.renameTo(new File(FilePath));				
+						Log.i("Image_Download", "下载完成");		
 						
 						long id;
 						try {
 							ImageDao imageDao = new ImageDao(context);
 							id = imageDao.Insert(new Image(FilePath, newFileName, FileMd5,
 									FileSize));
-							if(id == -1){
+							if(id == -1){	
+								Message msg_repeat = new Message();
+								msg_repeat.what = StatueCode.STATUE_REPEAT;
+								msg_repeat.obj = code + "";
+								handler.sendMessage(msg_repeat);
 								Log.e("Image_SQL", "数据插入失败");
+							}else{
+								Message msg_ok = new Message();
+								msg_ok.what = StatueCode.STATUE_OK;
+								msg_ok.obj = code + "";
+								handler.sendMessage(msg_ok);
 							}
 						} catch (Exception e) {
 							Log.e("SQL_Insert_ERROR",e.toString());
-						}
+						}						
 						
 					}
 					else{
+						Message msg_except = new Message();
+						msg_except.what = StatueCode.STATUE_EXCEPT;
+						msg_except.obj = code + "";
+						handler.sendMessage(msg_except);
 						Log.d("Image_Download_Code", code+"");
 					}
 				} catch (Exception ex) {
+					Message msg = new Message();
+					msg.what = StatueCode.STATUE_ERROR;					
+					handler.sendMessage(msg);
 					Log.e("Image_Download_Error", ex.toString());
 				} finally {
 					// 完毕，关闭所有链接

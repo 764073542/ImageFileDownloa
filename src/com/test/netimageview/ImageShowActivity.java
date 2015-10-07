@@ -1,4 +1,4 @@
-package com.test.imagedownload;
+package com.test.netimageview;
 
 import android.app.Activity;
 import android.content.Intent;

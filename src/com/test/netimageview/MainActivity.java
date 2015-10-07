@@ -1,4 +1,4 @@
-package com.test.imagedownload;
+package com.test.netimageview;
 
 /*
  * 1.从数据库中读取图片的路径
@@ -18,12 +18,14 @@ import java.util.ArrayList;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Bitmap;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Message;
 import android.view.View;
+import android.widget.AdapterView;
+import android.widget.AdapterView.OnItemClickListener;
 import android.widget.EditText;
-import android.widget.ImageView;
-import android.widget.LinearLayout;
+import android.widget.ListView;
 import android.widget.Toast;
 
 import com.test.database.Image;
@@ -32,8 +34,15 @@ import com.test.dataset.NetImage;
 import com.test.dataset.NetImageSet;
 import com.test.sharing.NativeImageSet;
 import com.test.utils.DownloadImage;
-import com.test.utils.GetThumbNail;
+import com.test.utils.StatueCode;
 
+/*
+ * 当前问题
+ * 1.点击刷新按钮，访问数据库太频繁
+ * 2.偶尔会崩溃
+ * 3.下载完成后的相关操作！
+ * 
+ */
 /*******************************
  * 1.创建一个集合用于保存图片的url 2.创建一个数据库用于存储图片的路径、名称、指纹信息 3.提供一个获取图片md5的工具类（传递一个图片路径）
  * 4.提供一个下载文件的工具类（传递一个url） 5.获取文件缩略图工具类 6.各种操作的权限……
@@ -41,16 +50,62 @@ import com.test.utils.GetThumbNail;
 public class MainActivity extends Activity {
 	private EditText edt_url;
 	private Context context;
-	private LinearLayout line_Layout;
+	private ListView listview;
+	private MyAdapter adapter;
+	public Handler handler = new Handler() {
+		@Override
+		public void handleMessage(Message msg) {
+			switch (msg.what) {
+			case 0:
+				break;
+			case StatueCode.STATUE_OK:
+				Toast.makeText(MainActivity.this, "下载完成", 0).show();
+				RefreshListView();
+				break;
+			case StatueCode.STATUE_ERROR:
+				Toast.makeText(MainActivity.this, "下载失败", 0).show();
+				break;
+			case StatueCode.STATUE_REPEAT:
+				Toast.makeText(MainActivity.this, "文件已存在", 0).show();
+				break;
+			case StatueCode.STATUE_EXCEPT:
+				Toast.makeText(MainActivity.this, "下载失败，状态码为" + msg.obj, 0)
+						.show();
+				break;
+
+			default:
+				break;
+			}
+		}
+	};
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.activity_main);
 		edt_url = (EditText) findViewById(R.id.edt_url);
-		line_Layout = (LinearLayout) findViewById(R.id.line_layout);
+
+		listview = (ListView) findViewById(R.id.list_show_image);
 		CheckPathExist(); // 有问题，需要再改改
 		context = this.getApplicationContext();
+		try {
+			adapter = new MyAdapter(this, ReadDataFromSQLite());
+			listview.setAdapter(adapter);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		listview.setOnItemClickListener(new OnItemClickListener() {
+			public void onItemClick(AdapterView<?> arg0, View view,
+					int position, long arg3) {
+				Image image = null;
+				image = (Image) adapter.getItem(position);
+				Intent intent = new Intent();
+				intent.putExtra("path", image.getImage_path());
+				intent.setClass(MainActivity.this, ImageShowActivity.class);
+				startActivity(intent);
+			}
+
+		});
 
 	}
 
@@ -80,7 +135,7 @@ public class MainActivity extends Activity {
 			NetImageSet.getInstance().addImage(new NetImage(url));
 			// Toast.makeText(this, "开始下载", 0).show();
 			DownloadImage.downloadImage(NetImageSet.getInstance().getImage()
-					.getUrl(), context);
+					.getUrl(), context, handler);
 			NetImageSet.getInstance().deleteImage();
 		}
 	}
@@ -115,7 +170,7 @@ public class MainActivity extends Activity {
 		int length = NetImageSet.getInstance().getLength();
 		for (int i = 0; i < length; i++) {
 			DownloadImage.downloadImage(NetImageSet.getInstance().getImage()
-					.getUrl(), context);
+					.getUrl(), context, handler);
 			NetImageSet.getInstance().deleteImage();
 		}
 	}
@@ -138,25 +193,23 @@ public class MainActivity extends Activity {
 	 * @param view
 	 */
 	public void Refresh(View view) {
-		line_Layout.removeAllViews();
-		ArrayList<Image> imageList = ReadDataFromSQLite();
-		for (int i = 0; i < imageList.size(); i++) {
-			ImageView img = new ImageView(context);
 
-			try {
-				// 可能人图片文件被删除了，而数据库还没有更新
-				Bitmap bm = GetThumbNail.getImageThumbnail(imageList.get(i)
-						.getImage_path(), 240, 240);
-				img.setImageBitmap(bm);
-				line_Layout.addView(img);
-			} catch (Exception e) {
-				int num = new ImageDao(context).delete(imageList.get(i)
-						.getImage_md5());
-				if (num != -1) {
-					System.out.println("删除完成");
-				}
-				imageList.remove(i);
-			}
+		try {
+			adapter = new MyAdapter(this, ReadDataFromSQLite());
+			listview.setAdapter(adapter);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+
+	}
+
+	private void RefreshListView() {
+
+		try {
+			adapter = new MyAdapter(this, ReadDataFromSQLite());
+			listview.setAdapter(adapter);
+		} catch (Exception e) {
+			e.printStackTrace();
 		}
 
 	}
@@ -168,6 +221,18 @@ public class MainActivity extends Activity {
 		ArrayList<Image> imageList = null;
 		ImageDao imageDao = new ImageDao(context);
 		imageList = imageDao.findAll();
+		return imageList;
+	}
+
+	private ArrayList<Image> check() {
+		ArrayList<Image> imageList = ReadDataFromSQLite();
+		for (Image image : imageList) {
+			if (!new File(image.getImage_path()).exists()) {
+				ImageDao imageDao = new ImageDao(context);
+				imageDao.delete(image.getImage_md5());
+				imageList.remove(image);
+			}
+		}
 		return imageList;
 	}
 }

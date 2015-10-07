@@ -37,11 +37,10 @@
             android:text="刷新" />
     </LinearLayout>
 
-    <LinearLayout
-        android:id="@+id/line_layout"
+    <ListView
+        android:id="@+id/list_show_image"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical" >
-    </LinearLayout>
+        android:layout_height="wrap_content" >
+    </ListView>    
 
 </LinearLayout>
